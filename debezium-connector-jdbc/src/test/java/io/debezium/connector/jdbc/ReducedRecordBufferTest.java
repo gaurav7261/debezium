@@ -8,6 +8,7 @@ package io.debezium.connector.jdbc;
 
 import static io.debezium.connector.jdbc.JdbcSinkConnectorConfig.PrimaryKeyMode.NONE;
 import static io.debezium.connector.jdbc.JdbcSinkConnectorConfig.PrimaryKeyMode.RECORD_KEY;
+import static io.debezium.connector.jdbc.JdbcSinkConnectorConfig.PrimaryKeyMode.RECORD_VALUE;
 import static java.util.function.Predicate.not;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -17,6 +18,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -75,11 +77,11 @@ class ReducedRecordBufferTest {
                         .withPrimaryKeyFields(Set.of("id"))
                         .withPrimaryKeyMode(RECORD_KEY)
                         .build())
-                .collect(Collectors.toList());
+                .toList();
 
         List<List<SinkRecordDescriptor>> batches = sinkRecords.stream().map(reducedRecordBuffer::add)
                 .filter(not(List::isEmpty))
-                .collect(Collectors.toList());
+                .toList();
 
         assertThat(batches.size()).isEqualTo(2);
 
@@ -124,7 +126,7 @@ class ReducedRecordBufferTest {
 
         List<List<SinkRecordDescriptor>> batches = sinkRecords.stream().map(reducedRecordBuffer::add)
                 .filter(not(List::isEmpty))
-                .collect(Collectors.toList());
+                .toList();
 
         assertThat(batches.size()).isEqualTo(1);
 
@@ -169,7 +171,7 @@ class ReducedRecordBufferTest {
 
         List<List<SinkRecordDescriptor>> batches = sinkRecords.stream().map(reducedRecordBuffer::add)
                 .filter(not(List::isEmpty))
-                .collect(Collectors.toList());
+                .toList();
 
         assertThat(batches.size()).isEqualTo(1);
 
@@ -191,11 +193,11 @@ class ReducedRecordBufferTest {
                         .withPrimaryKeyFields(Set.of("id"))
                         .withPrimaryKeyMode(RECORD_KEY)
                         .build())
-                .collect(Collectors.toList());
+                .toList();
 
         List<List<SinkRecordDescriptor>> batches = sinkRecords.stream().map(reducedRecordBuffer::add)
                 .filter(not(List::isEmpty))
-                .collect(Collectors.toList());
+                .toList();
 
         assertThat(batches.size()).isEqualTo(1);
         assertThat(batches.get(0).size()).isEqualTo(5);
@@ -217,7 +219,7 @@ class ReducedRecordBufferTest {
                         .withPrimaryKeyFields(Set.of())
                         .withPrimaryKeyMode(NONE)
                         .build())
-                .collect(Collectors.toList());
+                .toList();
 
         Stream<List<SinkRecordDescriptor>> batchesFilter = sinkRecords.stream().map(reducedRecordBuffer::add)
                 .filter(not(List::isEmpty));
@@ -226,4 +228,37 @@ class ReducedRecordBufferTest {
         assertThat(thrown.getMessage()).isEqualTo("No struct-based primary key defined for record key/value, reduction buffer require struct based primary key");
 
     }
+
+    @ParameterizedTest
+    @ArgumentsSource(SinkRecordFactoryArgumentsProvider.class)
+    @DisplayName("When primary key columns are in record value then reduced buffer should work as expected")
+    void primaryKeyInValue(SinkRecordFactory factory) {
+
+        JdbcSinkConnectorConfig config = new JdbcSinkConnectorConfig(Map.of("batch.size", "5", "primary.key.mode", "record_value", "primary.key.fields", "value_id"));
+        ReducedRecordBuffer reducedRecordBuffer = new ReducedRecordBuffer(config);
+
+        List<SinkRecordDescriptor> sinkRecords = IntStream.range(0, 10)
+                .mapToObj(i -> SinkRecordDescriptor.builder()
+                        .withSinkRecord(
+                                factory.createRecordWithSchemaValue(
+                                        "topic",
+                                        (byte) (1),
+                                        List.of("value_id", "name"),
+                                        List.of(SchemaBuilder.type(Schema.INT8_SCHEMA.type()).optional().build(),
+                                                SchemaBuilder.type(Schema.STRING_SCHEMA.type()).optional().build()),
+                                        Arrays.asList((byte) (i % 2 == 0 ? i : i - 1), "John Doe " + i)))
+                        .withDialect(dialect)
+                        .withPrimaryKeyFields(Set.of("value_id"))
+                        .withPrimaryKeyMode(RECORD_VALUE)
+                        .build())
+                .toList();
+
+        List<List<SinkRecordDescriptor>> batches = sinkRecords.stream().map(reducedRecordBuffer::add)
+                .filter(not(List::isEmpty))
+                .toList();
+
+        assertThat(batches.size()).isEqualTo(1);
+        assertThat(batches.get(0).size()).isEqualTo(5);
+    }
+
 }

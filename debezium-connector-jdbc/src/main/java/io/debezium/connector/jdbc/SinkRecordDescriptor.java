@@ -120,10 +120,10 @@ public class SinkRecordDescriptor {
         return record.valueSchema();
     }
 
-    public Struct getKeyStruct(PrimaryKeyMode primaryKeyMode) {
+    public Struct getKeyStruct(PrimaryKeyMode primaryKeyMode, Set<String> primaryKeyFields) {
         if (!getKeyFieldNames().isEmpty()) {
             switch (primaryKeyMode) {
-                case RECORD_KEY:
+                case RECORD_KEY -> {
                     final Schema keySchema = record.keySchema();
                     if (keySchema != null && Schema.Type.STRUCT.equals(keySchema.type())) {
                         return (Struct) record.key();
@@ -131,23 +131,47 @@ public class SinkRecordDescriptor {
                     else {
                         throw new ConnectException("No struct-based primary key defined for record key.");
                     }
-                case RECORD_VALUE:
+                }
+                case RECORD_VALUE -> {
                     final Schema valueSchema = record.valueSchema();
                     if (valueSchema != null && Schema.Type.STRUCT.equals(valueSchema.type())) {
-                        return getAfterStruct();
+                        Struct afterStruct = getAfterStruct();
+                        if (primaryKeyFields.isEmpty()) {
+                            return afterStruct;
+                        }
+                        else {
+                            final SchemaBuilder keySchemaBuilder = SchemaBuilder.struct();
+                            primaryKeyFields.forEach(fieldName -> {
+                                Field field = afterStruct.schema().field(fieldName);
+                                if (field != null) {
+                                    keySchemaBuilder.field(field.name(), field.schema());
+                                }
+                                else {
+                                    throw new ConnectException("Primary key field '" + fieldName + "' not found in record value schema.");
+                                }
+                            });
+                            Struct keyStruct = new Struct(keySchemaBuilder.build());
+                            primaryKeyFields.forEach(fieldName -> {
+                                Field field = afterStruct.schema().field(fieldName);
+                                if (field != null) {
+                                    keyStruct.put(field.name(), afterStruct.get(field));
+                                }
+                            });
+                            return keyStruct;
+                        }
                     }
                     else {
                         throw new ConnectException("No struct-based primary key defined for record value.");
                     }
-
-                case RECORD_HEADER:
+                }
+                case RECORD_HEADER -> {
                     final SchemaBuilder headerSchemaBuilder = SchemaBuilder.struct();
                     record.headers().forEach((Header header) -> headerSchemaBuilder.field(header.key(), header.schema()));
-
                     final Schema headerSchema = headerSchemaBuilder.build();
                     final Struct headerStruct = new Struct(headerSchema);
                     record.headers().forEach((Header header) -> headerStruct.put(header.key(), header.value()));
                     return headerStruct;
+                }
             }
         }
         return null;

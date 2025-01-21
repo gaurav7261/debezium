@@ -722,7 +722,8 @@ public class GeneralDatabaseDialect implements DatabaseDialect {
             value = getColumnValueForKafkaKeyMode(columnName, record);
         }
         else {
-            final Struct source = record.getKeyStruct(connectorConfig.getPrimaryKeyMode());
+            final Struct source = record.getKeyStruct(connectorConfig.getPrimaryKeyMode(),
+                    connectorConfig.getPrimaryKeyFields());
             value = source.get(fieldName);
         }
         return value;
